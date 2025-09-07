@@ -1,0 +1,38 @@
+<launch>
+        <!-- This will be replaced by the  -->
+        <arg name="robot_ip" default="10.0.0.1" />
+		<arg name="comport" default="/dev/ttyUSB0"/>
+	<!-- This starts the driver that allow the computer to communicate with the robot. -->
+	<include file="$(find ur_modern_driver)/launch/ur10_bringup.launch">
+		<arg name="robot_ip" value="$(arg robot_ip)"/>
+		<arg name="use_lowbandwidth_trajectory_follower" value="false"/>
+		<arg name="include_gripper" value="true"/>
+	</include>
+
+	<!-- This start MoveIt which allows us to plan trajectories while avoiding collisions. -->
+	<!-- <include file="$(find ur10_robotiq_moveit_config)/launch/ur10_moveit_planning_execution.launch">
+		<arg name="limited" value="true"/>
+	</include> -->
+
+	<!-- This launch a visualization tool which allows us to see the scene in which the
+				robot is working in. -->
+	<!-- <include file="$(find ur10_robotiq_moveit_config)/launch/moveit_rviz.launch">
+		<arg name="config" value="true"/>
+	</include> -->
+	
+
+	<!-- gripper action server -->
+	<include file="$(find robotiq_2f_gripper_control)/launch/robotiq_action_server.launch">
+		<arg name="comport" value="$(arg comport)"/>
+		<arg name="stroke" value="0.140" />
+	</include>
+
+	<node name="joint_state_publisher" pkg="joint_state_publisher" type="joint_state_publisher">
+        <!-- <rosparam param="source_list">["/joint_states", "/gripper/joint_states"]</rosparam> -->
+		<rosparam param="source_list">["/gripper/joint_states"]</rosparam> 
+	</node>
+
+	<include file="$(find ur10_robotiq_moveit_config)/launch/demo.launch">
+		<arg name="moveit_controller_manager" value="simple"/>
+	</include>
+</launch>

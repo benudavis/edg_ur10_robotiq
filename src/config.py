@@ -1,0 +1,4 @@
+# parameters
+DIGIT_AVG_FRAMES = 10
+GRIPPER_OFFSET = [0, 0, 0.25, 0, 0, 0]
+GRASP_FORCE = 40
