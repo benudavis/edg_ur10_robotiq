@@ -87,9 +87,10 @@ def toggle_digit_frame_service(req):
 def capture_digit_image_service(req):
     # this service captures a "single frame" average from DIGIT sensor
     try:
+        rospy.loginfo("trying to capture images")
         imgs = []
         times = []
-        for i in range(config.DIGIT_IMAGE_FRAMES):
+        for i in range(config.DIGIT_AVG_FRAMES):
             msg = rospy.wait_for_message("/digitFrame", Image, timeout=2.0)
             ros_time = msg.header.stamp
             img = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')

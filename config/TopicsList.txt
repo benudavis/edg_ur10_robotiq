@@ -1,3 +1,4 @@
 /endEffectorPose
 /netft_data
 /digitFrame
+/grasp_force

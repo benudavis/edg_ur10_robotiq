@@ -30,7 +30,6 @@ from netft_utils.srv import *
 from suction_cup.srv import *
 from std_msgs.msg import String
 from std_msgs.msg import Int8
-from std_msgs.msg import UInt8
 from std_srvs.srv import SetBool
 import geometry_msgs.msg
 
@@ -83,15 +82,12 @@ def main(args):
   file_help = fileSaveHelp()
   rospy.sleep(0.5)
   rtde_help = rtdeHelp(125)
-  adpt_help = adaptMotionHelp(d_w = 1.5,d_lat = 10e-3, d_z = 6e-5) # need to change d_z to change the speed of the robot
+  adpt_help = adaptMotionHelp(d_w = config.TWIST_SPEED,d_lat = 10e-3, d_z = 6e-5) # need to change d_z to change the speed of the robot
   rospy.sleep(0.5)
   rtde_help.setTCPoffset(config.GRIPPER_OFFSET)
 
   # Set the synchronization Publisher
   syncPub = rospy.Publisher('sync', Int8, queue_size=1)
-
-  # grasp force publisher
-  forcePub = rospy.Publisher('grasp_force', UInt8, queue_size=1)
 
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
@@ -100,8 +96,6 @@ def main(args):
   print("Wait for digit frame toggle service")
   rospy.wait_for_service('capture_digit_frame')
   capture_digit = rospy.ServiceProxy('capture_digit_frame', SetBool)
-  rospy.wait_for_service('toggle_digit_frame')
-  toggle_digit = rospy.ServiceProxy('toggle_digit_frame', SetBool)
   rospy.sleep(1)
   file_help.clearTmpFolder()        # clear the temporary folder
   datadir = file_help.ResultSavingDirectory
@@ -116,12 +110,20 @@ def main(args):
   # Set the pose B
   positionB = [0.5941, -0.123, 0.25]
   orientationB = tf.transformations.quaternion_from_euler(np.pi,0, 0,'sxyz') #static (s) rotating (r)
+  print(orientationA, orientationB)
   poseB = rtde_help.getPoseObj(positionB, orientationB)
 
   # try block so that we can have a keyboard exception
   try:
 
     input("Press <Enter> to go start pose")
+    # open
+    goal = CommandRobotiqGripperGoal()
+    goal.position = 0.07
+    goal.speed = 0
+    goal.force = 0
+    robotiq_client.send_goal(goal)
+    robotiq_client.wait_for_result()
     rtde_help.goToPose(poseA)
 
     input("Press <Enter> to go start expeirment")
@@ -137,32 +139,98 @@ def main(args):
     rospy.sleep(0.2)
     save_frames(capture_digit)
 
-    # close
+    # cyclic
     for i in range(args.cycle):
-      rospy.sleep(0.1)
-      # close gripper
-      goal = CommandRobotiqGripperGoal()
-      goal.position = 0.001
-      goal.speed = 0
-      goal.force = config.GRASP_FORCE
-      robotiq_client.send_goal(goal)
-      robotiq_client.wait_for_result()
+      # UNSCREW -----------------------------------------------
+      # two times for half a complete rotation
+      for i in range(2):
+        rtde_help.goToPose(poseA, speed=.5, acc=.5)
+        rospy.sleep(0.1)
+        # close gripper
+        goal = CommandRobotiqGripperGoal()
+        goal.position = 0.001
+        goal.speed = 0
+        goal.force = config.GRASP_FORCE
+        robotiq_client.send_goal(goal)
+        robotiq_client.wait_for_result()
+        # rotate
+        rtde_help.goToPose(poseB)
+        # open
+        goal = CommandRobotiqGripperGoal()
+        goal.position = 0.07
+        goal.speed = 0
+        goal.force = 0
+        robotiq_client.send_goal(goal)
+        robotiq_client.wait_for_result()
+        
+        rospy.sleep(0.1)
 
-      # capture image
-      save_frames(capture_digit)
+      # SCREW ------------------------------------------------------
+      FT_help.setNowAsBias()
+      rospy.sleep(0.1)    
 
-      # open
-      goal = CommandRobotiqGripperGoal()
-      goal.position = 0.07
-      goal.speed = 0
-      goal.force = 0
-      robotiq_client.send_goal(goal)
-      robotiq_client.wait_for_result()
-      
-      rospy.sleep(0.1)
+      tightened = False
+      tighten_cycles = 0
 
-      # capture image
-      save_frames(capture_digit)
+      while not tightened:
+        tighten_cycles += 1
+        # close gripper
+        goal = CommandRobotiqGripperGoal()
+        goal.position = 0
+        goal.speed = 0
+        goal.force = config.GRASP_FORCE
+        robotiq_client.send_goal(goal)
+        robotiq_client.wait_for_result()
+
+        targetPoseEngaged = rtde_help.getCurrentPose()
+        targetPose = targetPoseEngaged  # Initialize targetPose
+        orientation = [targetPoseEngaged.pose.orientation.x, targetPoseEngaged.pose.orientation.y,
+                      targetPoseEngaged.pose.orientation.z, targetPoseEngaged.pose.orientation.w]
+        Tz = FT_help.averageTz_noOffset
+
+        # conditional tightening, don't overtighten or over-rotate
+        while (abs(Tz) < config.TIGHTENING_TORQUE and np.sum(np.abs(orientationA - orientation)) > 0.1):
+
+          print("torque: " + str(abs(Tz)) + " / " + str(config.TIGHTENING_TORQUE))
+          print("rotation:" + str(np.sum(np.abs(orientationA - orientation))) + " / 0.1")
+          
+          T_move = adpt_help.get_Tmat_RotateInZ(direction = 1)
+          targetPose = adpt_help.get_PoseStamped_from_T_initPose(T_move, targetPose)
+          rtde_help.goToPoseAdaptive(targetPose, time = 0.1)
+          
+          # update vars
+          Tz = FT_help.averageTz_noOffset
+          targetPoseEngaged = rtde_help.getCurrentPose()
+          orientation = [targetPoseEngaged.pose.orientation.x, targetPoseEngaged.pose.orientation.y,
+                        targetPoseEngaged.pose.orientation.z, targetPoseEngaged.pose.orientation.w]
+        
+        # check if tightened
+        if abs(Tz) >= config.TIGHTENING_TORQUE or tighten_cycles > 5:
+          tightened = True
+          print(tightened)
+
+        rtde_help.stopAtCurrPoseAdaptive()
+        targetPose = rtde_help.getCurrentPose()
+
+        # open
+        goal = CommandRobotiqGripperGoal()
+        goal.position = 0.07
+        goal.speed = 0
+        goal.force = 0
+        robotiq_client.send_goal(goal)
+        robotiq_client.wait_for_result()
+
+        # reset if more cycles will happen
+        if not tightened:
+          rtde_help.goToPose(poseB, speed=.5, acc=.5)
+
+          # update vars
+          Tz = FT_help.averageTz_noOffset
+          targetPoseEngaged = rtde_help.getCurrentPose()
+          orientation = [targetPoseEngaged.pose.orientation.x, targetPoseEngaged.pose.orientation.y,
+                        targetPoseEngaged.pose.orientation.z, targetPoseEngaged.pose.orientation.w]
+        
+        rospy.sleep(0.1)
 
     # stop data logging
     rtde_help.goToPose(poseA)
