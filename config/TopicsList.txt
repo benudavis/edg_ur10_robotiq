@@ -2,3 +2,4 @@
 /netft_data
 /digitFrame
 /grasp_force
+/is_grasping

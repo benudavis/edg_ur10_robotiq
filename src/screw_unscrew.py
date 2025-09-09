@@ -103,12 +103,12 @@ def main(args):
 
   # Set the pose A
   
-  positionA = [0.5941, -0.123, 0.25]
+  positionA = config.POSITION_A
   orientationA = tf.transformations.quaternion_from_euler(np.pi,0,-np.pi/2,'sxyz') #static (s) rotating (r)
   poseA = rtde_help.getPoseObj(positionA, orientationA)
 
   # Set the pose B
-  positionB = [0.5941, -0.123, 0.25]
+  positionB = config.POSITION_B
   orientationB = tf.transformations.quaternion_from_euler(np.pi,0, 0,'sxyz') #static (s) rotating (r)
   print(orientationA, orientationB)
   poseB = rtde_help.getPoseObj(positionB, orientationB)
@@ -158,7 +158,7 @@ def main(args):
         # open
         goal = CommandRobotiqGripperGoal()
         goal.position = 0.07
-        goal.speed = 0
+        goal.speed = 100
         goal.force = 0
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
@@ -201,8 +201,12 @@ def main(args):
           # update vars
           Tz = FT_help.averageTz_noOffset
           targetPoseEngaged = rtde_help.getCurrentPose()
-          orientation = [targetPoseEngaged.pose.orientation.x, targetPoseEngaged.pose.orientation.y,
-                        targetPoseEngaged.pose.orientation.z, targetPoseEngaged.pose.orientation.w]
+          orientation = np.array([targetPoseEngaged.pose.orientation.x, targetPoseEngaged.pose.orientation.y,
+                        targetPoseEngaged.pose.orientation.z, targetPoseEngaged.pose.orientation.w])
+          
+          # check antipodal case
+          if np.dot(orientation, orientationA) < 0:
+            orientation = -orientation
         
         # check if tightened
         if abs(Tz) >= config.TIGHTENING_TORQUE or tighten_cycles > 5:

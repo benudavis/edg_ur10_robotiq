@@ -30,7 +30,7 @@ from netft_utils.srv import *
 from suction_cup.srv import *
 from std_msgs.msg import String
 from std_msgs.msg import Int8
-from std_msgs.msg import UInt8
+from std_msgs.msg import Float32, Bool
 from std_srvs.srv import SetBool
 import geometry_msgs.msg
 
@@ -91,7 +91,8 @@ def main(args):
   syncPub = rospy.Publisher('sync', Int8, queue_size=1)
 
   # grasp force publisher
-  forcePub = rospy.Publisher('grasp_force', UInt8, queue_size=1)
+  graspForcePub = rospy.Publisher('grasp_force', Float32, queue_size=1)
+  isGraspingPub = rospy.Publisher('is_grasping', Bool, queue_size=1)
 
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
@@ -109,8 +110,11 @@ def main(args):
 
   # Set the pose A
   
-  positionA = [0.5941, -0.123, 0.25]
-  orientationA = tf.transformations.quaternion_from_euler(np.pi,0,-np.pi/2,'sxyz') #static (s) rotating (r)
+  positionA = config.POSITION_A
+  orientationA_euler = np.array([np.pi,0,-np.pi/2])
+  orientationA = tf.transformations.quaternion_from_euler(orientationA_euler[0],
+                                                          orientationA_euler[1],
+                                                          orientationA_euler[2], 'sxyz') #static (s) rotating (r)
   poseA = rtde_help.getPoseObj(positionA, orientationA)
 
   # Set the pose B
@@ -122,6 +126,13 @@ def main(args):
   try:
 
     input("Press <Enter> to go start pose")
+    # open
+    goal = CommandRobotiqGripperGoal()
+    goal.position = 0.07
+    goal.speed = 0
+    goal.force = 0
+    robotiq_client.send_goal(goal)
+    robotiq_client.wait_for_result()
     rtde_help.goToPose(poseA)
 
     input("Press <Enter> to go start expeirment")
@@ -132,40 +143,72 @@ def main(args):
     except:
       print("set now as offset failed, but it's okay")
 
-    # start data logging
+    # log unloaded data
     dataLoggerEnable(True)
+    syncPub.publish(SYNC_START)
     rospy.sleep(0.2)
-    save_frames(capture_digit)
+    record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, grasp_force=-1, is_grasping=False)
 
     # close
+    num_tests = (args.cycle * len(config.X_OFFSETS) * len(config.Y_OFFSETS) * len(config.Z_OFFSETS) * 
+                 len(config.ANGLE_OFFSETS) * len(config.FORCE_OFFSETS))
+    idx = 0
     for i in range(args.cycle):
-      rospy.sleep(0.1)
-      # close gripper
-      goal = CommandRobotiqGripperGoal()
-      goal.position = 0.001
-      goal.speed = 0
-      goal.force = config.GRASP_FORCE
-      robotiq_client.send_goal(goal)
-      robotiq_client.wait_for_result()
+      # nested loops for all data collection offsets
+      for x_offset in config.X_OFFSETS:
+        for y_offset in config.Y_OFFSETS:
+          for z_offset in config.Z_OFFSETS:
+            for angle_offset in config.ANGLE_OFFSETS:
+              for force_offset in config.FORCE_OFFSETS:
+                idx+=1
+                # print information
+                print('TESTING ===============')
+                print(x_offset, y_offset, z_offset, angle_offset, force_offset)
+                print('Progress: ' + str(idx) + ' / ' + str(num_tests))
+                print('*'*int(np.round(idx/num_tests*30)) + '.'*int(np.round((1-idx/num_tests)*30)))
 
-      # capture image
-      save_frames(capture_digit)
+                # get updated pose
+                position = positionA + np.array([x_offset, y_offset, z_offset])
+                orientation_euler = orientationA_euler + np.array([0, 0, angle_offset])
+                orientation = tf.transformations.quaternion_from_euler(orientation_euler[0],
+                                                                       orientation_euler[1],
+                                                                       orientation_euler[2], 'sxyz')
+                pose = rtde_help.getPoseObj(position, orientation)
+                grasp_force = config.GRASP_FORCE + force_offset
 
-      # open
-      goal = CommandRobotiqGripperGoal()
-      goal.position = 0.07
-      goal.speed = 0
-      goal.force = 0
-      robotiq_client.send_goal(goal)
-      robotiq_client.wait_for_result()
-      
-      rospy.sleep(0.1)
+                rtde_help.goToPose(pose)
 
-      # capture image
-      save_frames(capture_digit)
+                rospy.sleep(0.1)
+                # close gripper
+                goal = CommandRobotiqGripperGoal()
+                goal.position = 0.001
+                goal.speed = 0
+                goal.force = grasp_force
+                robotiq_client.send_goal(goal)
+                robotiq_client.wait_for_result()
+                rospy.sleep(0.4)
+
+                # capture image
+                record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
+                            grasp_force=grasp_force, is_grasping=True)
+
+                # open
+                goal = CommandRobotiqGripperGoal()
+                goal.position = 0.07
+                goal.speed = 50
+                goal.force = 0
+                robotiq_client.send_goal(goal)
+                robotiq_client.wait_for_result()
+                
+                rospy.sleep(0.2)
+
+                # capture image
+                record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
+                            grasp_force=-1, is_grasping=False)
 
     # stop data logging
     rtde_help.goToPose(poseA)
+    syncPub.publish(SYNC_STOP)
     dataLoggerEnable(False)
     rospy.sleep(0.2)
 
@@ -180,9 +223,15 @@ def main(args):
     return  
   
 # function for saving certain number of frames
-def save_frames(capture_digit, wait_time=0.1):
+def save_frames(capture_digit, wait_time=0.001):
   capture_digit(True)
   rospy.sleep(wait_time)  # Wait for the specified save period
+
+def record_data(capture_digit, graspForcePub, isGraspingPub, grasp_force, is_grasping, ppc=config.POINTS_PER_CAPTURE):
+  for i in range(ppc):
+    save_frames(capture_digit)
+    graspForcePub.publish(grasp_force)
+    isGraspingPub.publish(is_grasping)
 
 
 if __name__ == '__main__':  
