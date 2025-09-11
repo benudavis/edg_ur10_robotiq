@@ -34,8 +34,11 @@ from std_msgs.msg import Float32, Bool
 from std_srvs.srv import SetBool
 import geometry_msgs.msg
 
+from edg_ur10_robotiq.srv import GetImage
+
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+bridge = CvBridge()
 import cv2
 import config
 
@@ -103,10 +106,11 @@ def main(args):
   capture_digit = rospy.ServiceProxy('capture_digit_frame', SetBool)
   rospy.wait_for_service('toggle_digit_frame')
   toggle_digit = rospy.ServiceProxy('toggle_digit_frame', SetBool)
+  rospy.wait_for_service('get_last_image')
+  get_last_image = rospy.ServiceProxy('get_last_image', GetImage)
   rospy.sleep(1)
   file_help.clearTmpFolder()        # clear the temporary folder
   datadir = file_help.ResultSavingDirectory
-
 
   # Set the pose A
   
@@ -167,6 +171,11 @@ def main(args):
                 print('Progress: ' + str(idx) + ' / ' + str(num_tests))
                 print('*'*int(np.round(idx/num_tests*30)) + '.'*int(np.round((1-idx/num_tests)*30)))
 
+                # try getting last image
+                # last_img = get_last_image()
+                # if last_img.captured_image.data is not None:
+                #   print(bridge.imgmsg_to_cv2(last_img.captured_image, desired_encoding='passthrough'))
+
                 # get updated pose
                 position = positionA + np.array([x_offset, y_offset, z_offset])
                 orientation_euler = orientationA_euler + np.array([0, 0, angle_offset])
@@ -214,10 +223,10 @@ def main(args):
     syncPub.publish(SYNC_STOP)
     dataLoggerEnable(False)
     print('waiting for data logger to finish...')
-    rospy.sleep(10)
+    rospy.sleep(3)
 
     # save data and clear the temporary folder
-    file_help.saveDataParams(args, appendTxt='Simple_experiment_'+'depth_'+str(args.depth)+'_cycle_'+str(args.cycle))
+    # file_help.saveDataParams(args, appendTxt='Simple_experiment_'+'depth_'+str(args.depth)+'_cycle_'+str(args.cycle))
     file_help.clearTmpFolder()
 
     print("============ Python UR_Interface demo complete!")

@@ -1,0 +1,5 @@
+# request (empty)
+
+---
+# response
+sensor_msgs/Image captured_image

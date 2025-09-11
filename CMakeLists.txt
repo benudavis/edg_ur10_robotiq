@@ -1,7 +1,7 @@
 # http://ros.org/doc/groovy/api/catkin/html/user_guide/supposed.html
 cmake_minimum_required(VERSION 2.8.3)
 project(edg_ur10_robotiq)
-find_package(catkin REQUIRED COMPONENTS roscpp rospy message_generation)
+find_package(catkin REQUIRED COMPONENTS roscpp rospy message_generation sensor_msgs)
 
 
 #set the default path for built executables to the "bin" directory
@@ -28,6 +28,7 @@ add_message_files(
 add_service_files(
    FILES
    Enable.srv
+   GetImage.srv
 )
 
 ## Generate actions in the 'action' folder
@@ -41,6 +42,7 @@ add_service_files(
 generate_messages(
  DEPENDENCIES
  std_msgs
+ sensor_msgs
 )
 
 ###################################
@@ -52,7 +54,7 @@ generate_messages(
 ## CATKIN_DEPENDS: catkin_packages dependent projects also need
 ## DEPENDS: system dependencies of this project that dependent projects also need
 catkin_package(
-    CATKIN_DEPENDS rospy message_runtime roscpp
+    CATKIN_DEPENDS rospy sensor_msgs message_runtime roscpp
 #    INCLUDE_DIRS include
 )
 

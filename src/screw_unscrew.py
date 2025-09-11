@@ -28,13 +28,16 @@ import pickle
 
 from netft_utils.srv import *
 from suction_cup.srv import *
+from edg_ur10_robotiq.srv import GetImage
 from std_msgs.msg import String
 from std_msgs.msg import Int8
+from std_msgs.msg import Float32, Bool
 from std_srvs.srv import SetBool
 import geometry_msgs.msg
 
 from sensor_msgs.msg import Image
 from cv_bridge import CvBridge
+bridge = CvBridge()
 import cv2
 import config
 
@@ -89,6 +92,10 @@ def main(args):
   # Set the synchronization Publisher
   syncPub = rospy.Publisher('sync', Int8, queue_size=1)
 
+  # grasp force publisher
+  graspForcePub = rospy.Publisher('grasp_force', Float32, queue_size=1)
+  isGraspingPub = rospy.Publisher('is_grasping', Bool, queue_size=1)
+
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
   dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable)
@@ -96,6 +103,8 @@ def main(args):
   print("Wait for digit frame toggle service")
   rospy.wait_for_service('capture_digit_frame')
   capture_digit = rospy.ServiceProxy('capture_digit_frame', SetBool)
+  rospy.wait_for_service('get_last_image')
+  get_last_image = rospy.ServiceProxy('get_last_image', GetImage)
   rospy.sleep(1)
   file_help.clearTmpFolder()        # clear the temporary folder
   datadir = file_help.ResultSavingDirectory
@@ -140,8 +149,9 @@ def main(args):
 
     # start data logging
     dataLoggerEnable(True)
+    syncPub.publish(SYNC_START)
     rospy.sleep(0.2)
-    save_frames(capture_digit)
+    record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, grasp_force=-1, is_grasping=False)
 
     # cyclic
     for i in range(args.cycle):
@@ -156,8 +166,9 @@ def main(args):
         goal.force = config.GRASP_FORCE
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
-        rospy.sleep(0.2)
-        save_frames(capture_digit)
+        rospy.sleep(0.3)
+        record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
+                    grasp_force=config.GRASP_FORCE, is_grasping=True)
         # rotate
         rtde_help.goToPose(poseC)
         rospy.sleep(0.2)
@@ -170,7 +181,8 @@ def main(args):
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
         rospy.sleep(0.2)
-        save_frames(capture_digit)
+        record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
+                    grasp_force=-1, is_grasping=False)
         
         rospy.sleep(0.1)
 
@@ -189,12 +201,17 @@ def main(args):
         goal.position = 0
         goal.speed = 0
         # on first cycle, we can use less force
+        grasp_force = 0
         if tighten_cycles==1:
-          goal.force = config.LOW_GRASP_FORCE
+          grasp_force = config.LOW_GRASP_FORCE
         else:
-          goal.force = config.GRASP_FORCE
+          grasp_force = config.GRASP_FORCE
+        goal.force = grasp_force
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
+
+        record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
+                    grasp_force=grasp_force, is_grasping=True)
 
         targetPoseEngaged = rtde_help.getCurrentPose()
         targetPose = targetPoseEngaged  # Initialize targetPose
@@ -231,8 +248,9 @@ def main(args):
         rtde_help.stopAtCurrPoseAdaptive()
         targetPose = rtde_help.getCurrentPose()
 
-        rospy.sleep(0.2)
-        save_frames(capture_digit)
+        rospy.sleep(0.4)
+        record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
+                    grasp_force=grasp_force, is_grasping=True)
 
         # open
         goal = CommandRobotiqGripperGoal()
@@ -242,7 +260,8 @@ def main(args):
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
         rospy.sleep(0.2)
-        save_frames(capture_digit)
+        record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
+                    grasp_force=-1, is_grasping=False)
 
         # reset if more cycles will happen
         if not tightened:
@@ -261,10 +280,10 @@ def main(args):
     # stop data logging
     rtde_help.goToPose(poseA)
     dataLoggerEnable(False)
-    rospy.sleep(0.2)
+    rospy.sleep(5)
 
     # save data and clear the temporary folder
-    file_help.saveDataParams(args, appendTxt='Simple_experiment_'+'depth_'+str(args.depth)+'_cycle_'+str(args.cycle))
+    # file_help.saveDataParams(args, appendTxt='Simple_experiment_'+'depth_'+str(args.depth)+'_cycle_'+str(args.cycle))
     file_help.clearTmpFolder()
 
     print("============ Python UR_Interface demo complete!")
@@ -274,9 +293,15 @@ def main(args):
     return  
   
 # function for saving certain number of frames
-def save_frames(capture_digit, wait_time=0.1):
+def save_frames(capture_digit, wait_time=0.001):
   capture_digit(True)
   rospy.sleep(wait_time)  # Wait for the specified save period
+
+def record_data(capture_digit, graspForcePub, isGraspingPub, grasp_force, is_grasping, ppc=config.POINTS_PER_CAPTURE):
+  for i in range(ppc):
+    save_frames(capture_digit)
+    graspForcePub.publish(grasp_force)
+    isGraspingPub.publish(is_grasping)
 
 
 if __name__ == '__main__':  

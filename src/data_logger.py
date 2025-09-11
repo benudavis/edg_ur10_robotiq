@@ -15,6 +15,7 @@ import numbers
 import collections
 from operator import attrgetter
 from datetime import datetime
+from edg_ur10_robotiq.srv import GetImage, GetImageResponse
 from std_srvs.srv import SetBool, SetBoolResponse
 import config
 
@@ -64,6 +65,8 @@ digit_image_topic = "/digitFrame"  # update if your topic name is different
 
 save_digit_frames = False # Set to True to save frames
 
+last_digit_image = None
+
 def digit_image_callback(msg):
     global save_digit_frames
     if not save_digit_frames:
@@ -85,6 +88,7 @@ def toggle_digit_frame_service(req):
     return SetBoolResponse(success=True, message="Digit frame logging has been toggled.")
 
 def capture_digit_image_service(req):
+    global last_digit_image
     # this service captures a "single frame" average from DIGIT sensor
     try:
         rospy.loginfo("trying to capture images")
@@ -100,6 +104,7 @@ def capture_digit_image_service(req):
         if imgs:
             avg_img = np.mean(np.array(imgs), axis=0).astype(np.uint8)
             avg_time = np.mean(times)
+            last_digit_image = avg_img
         else:
             rospy.logwarn("[X] No images captured from DIGIT sensor.")
             return SetBoolResponse(success=False, message="No images captured.")
@@ -111,6 +116,21 @@ def capture_digit_image_service(req):
         return SetBoolResponse(success=False, message="Timed out waiting forimage from DIGIT sensor.")
     except Exception as e:
         return SetBoolResponse(success=False, message=f"Unexpected error: {e}")
+    
+def get_last_digit_image_service(req):
+    global last_captured_image
+    if last_digit_image is not None:
+        try:
+            img_msg = bridge.cv2_to_imgmsg(last_digit_image, "rgb8")
+            rospy.loginfo("[✓] Last captured image provided via service.")
+            return GetImageResponse(captured_image=img_msg)
+        except Exception as e:
+            rospy.logerr(f"[X] Failed to convert image for service response: {e}")
+            return GetImageResponse() # Return an empty response on failure
+    else:
+        rospy.logwarn("last captured image unavailable")
+        return GetImageResponse()
+
 
 
 def appendDataPoint(topic, msg):
@@ -419,5 +439,6 @@ if __name__ == '__main__':
     service = rospy.Service('data_logging', Enable, setLoggingState)
     digit_service = rospy.Service('capture_digit_frame', SetBool, capture_digit_image_service)
     digit_toggle_service = rospy.Service('toggle_digit_frame', SetBool, toggle_digit_frame_service)
+    last_image_service = rospy.Service('get_last_image', GetImage, get_last_digit_image_service)
 
     rospy.spin()
