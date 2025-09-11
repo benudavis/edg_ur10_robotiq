@@ -110,8 +110,12 @@ def main(args):
   # Set the pose B
   positionB = config.POSITION_B
   orientationB = tf.transformations.quaternion_from_euler(np.pi,0, 0,'sxyz') #static (s) rotating (r)
-  print(orientationA, orientationB)
   poseB = rtde_help.getPoseObj(positionB, orientationB)
+
+  # pose C: where we open to
+  positionC = config.POSITION_B
+  orientationC = tf.transformations.quaternion_from_euler(np.pi,0, np.pi/6,'sxyz') #static (s) rotating (r)
+  poseC = rtde_help.getPoseObj(positionC, orientationC)
 
   # try block so that we can have a keyboard exception
   try:
@@ -142,8 +146,7 @@ def main(args):
     # cyclic
     for i in range(args.cycle):
       # UNSCREW -----------------------------------------------
-      # two times for half a complete rotation
-      for i in range(2):
+      for i in range(1):
         rtde_help.goToPose(poseA, speed=.5, acc=.5)
         rospy.sleep(0.1)
         # close gripper
@@ -153,8 +156,12 @@ def main(args):
         goal.force = config.GRASP_FORCE
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
+        rospy.sleep(0.2)
+        save_frames(capture_digit)
         # rotate
-        rtde_help.goToPose(poseB)
+        rtde_help.goToPose(poseC)
+        rospy.sleep(0.2)
+        save_frames(capture_digit)
         # open
         goal = CommandRobotiqGripperGoal()
         goal.position = 0.07
@@ -162,10 +169,13 @@ def main(args):
         goal.force = 0
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
+        rospy.sleep(0.2)
+        save_frames(capture_digit)
         
         rospy.sleep(0.1)
 
       # SCREW ------------------------------------------------------
+      rtde_help.goToPose(poseB)
       FT_help.setNowAsBias()
       rospy.sleep(0.1)    
 
@@ -178,7 +188,11 @@ def main(args):
         goal = CommandRobotiqGripperGoal()
         goal.position = 0
         goal.speed = 0
-        goal.force = config.GRASP_FORCE
+        # on first cycle, we can use less force
+        if tighten_cycles==1:
+          goal.force = config.LOW_GRASP_FORCE
+        else:
+          goal.force = config.GRASP_FORCE
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
 
@@ -211,10 +225,14 @@ def main(args):
         # check if tightened
         if abs(Tz) >= config.TIGHTENING_TORQUE or tighten_cycles > 5:
           tightened = True
+          # rospy.sleep(5)
           print(tightened)
 
         rtde_help.stopAtCurrPoseAdaptive()
         targetPose = rtde_help.getCurrentPose()
+
+        rospy.sleep(0.2)
+        save_frames(capture_digit)
 
         # open
         goal = CommandRobotiqGripperGoal()
@@ -223,6 +241,8 @@ def main(args):
         goal.force = 0
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
+        rospy.sleep(0.2)
+        save_frames(capture_digit)
 
         # reset if more cycles will happen
         if not tightened:
@@ -235,6 +255,8 @@ def main(args):
                         targetPoseEngaged.pose.orientation.z, targetPoseEngaged.pose.orientation.w]
         
         rospy.sleep(0.1)
+
+    
 
     # stop data logging
     rtde_help.goToPose(poseA)

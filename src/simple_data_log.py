@@ -30,7 +30,8 @@ import pickle
 from netft_utils.srv import *
 from suction_cup.srv import *
 from std_msgs.msg import String
-from std_msgs.msg import Int8
+from std_msgs.msg import Int8, Bool, Float32
+from std_srvs.srv import SetBool
 import geometry_msgs.msg
 
 from helperFunction.FT_callback_helper import FT_CallbackHelp
@@ -57,10 +58,18 @@ def main(args):
   # Set the synchronization Publisher
   syncPub = rospy.Publisher('sync', Int8, queue_size=1)
 
+  # grasp force publisher
+  graspForcePub = rospy.Publisher('grasp_force', Float32, queue_size=1)
+  isGraspingPub = rospy.Publisher('is_grasping', Bool, queue_size=1)
+
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
   dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable)
   dataLoggerEnable(False) # reset Data Logger just in case
+  print("Wait for digit frame toggle service")
+  rospy.wait_for_service('capture_digit_frame')
+  capture_digit = rospy.ServiceProxy('capture_digit_frame', SetBool)
+  
   rospy.sleep(1)
   file_help.clearTmpFolder()        # clear the temporary folder
   datadir = file_help.ResultSavingDirectory
@@ -88,17 +97,20 @@ def main(args):
     while (time.time() - start_time) < 5:
       # publish SYNC_START
       syncPub.publish(SYNC_START)
-      rospy.sleep(0.1)
+      capture_digit(True)
+      graspForcePub.publish(0)
+      isGraspingPub.publish(False)
+      rospy.sleep(0.5)
 
 
     args.currentTime = datetime.now().strftime("%H%M%S")
 
     # stop data logging
     dataLoggerEnable(False)
-    rospy.sleep(0.2)
+    rospy.sleep(1)
 
     # save data and clear the temporary folder
-    file_help.saveDataParams(args, appendTxt='Simple_data_log_'+'argument(int)_'+ str(args.int)+'_argument(code)_'+ str(args.currentTime))
+    # file_help.saveDataParams(args, appendTxt='Simple_data_log_'+'argument(int)_'+ str(args.int)+'_argument(code)_'+ str(args.currentTime))
     file_help.clearTmpFolder()
 
     print("============ Python UR_Interface demo complete!")

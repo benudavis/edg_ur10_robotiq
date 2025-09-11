@@ -19,7 +19,7 @@ def digitFramePublisher():
     d.set_resolution(Digit.STREAMS['QVGA']) 
 
     bridge = CvBridge()
-    rate = rospy.Rate(30)
+    rate = rospy.Rate(60)
 
     firstframe = None  # Placeholder for the first frame
     show_delta = False  # Flag to control delta display

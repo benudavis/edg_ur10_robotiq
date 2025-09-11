@@ -128,7 +128,7 @@ def main(args):
     input("Press <Enter> to go start pose")
     # open
     goal = CommandRobotiqGripperGoal()
-    goal.position = 0.07
+    goal.position = 0.09
     goal.speed = 0
     goal.force = 0
     robotiq_client.send_goal(goal)
@@ -194,7 +194,7 @@ def main(args):
 
                 # open
                 goal = CommandRobotiqGripperGoal()
-                goal.position = 0.07
+                goal.position = 0.09
                 goal.speed = 50
                 goal.force = 0
                 robotiq_client.send_goal(goal)
@@ -205,12 +205,16 @@ def main(args):
                 # capture image
                 record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
                             grasp_force=-1, is_grasping=False)
+                
+    # sleep before turning off data logger
+    rospy.sleep(.2)
 
     # stop data logging
     rtde_help.goToPose(poseA)
     syncPub.publish(SYNC_STOP)
     dataLoggerEnable(False)
-    rospy.sleep(0.2)
+    print('waiting for data logger to finish...')
+    rospy.sleep(10)
 
     # save data and clear the temporary folder
     file_help.saveDataParams(args, appendTxt='Simple_experiment_'+'depth_'+str(args.depth)+'_cycle_'+str(args.cycle))
@@ -240,7 +244,7 @@ if __name__ == '__main__':
   parser.add_argument('--depth', type=int, help='argument for test type', default= 0)
   parser.add_argument('--author', type=str, help='argument for str type', default= "EDG")
   parser.add_argument('--cycle', type=int, help='the number of cycle to apply', default = 1)
-  parser.add_argument('--comport', type=str, help='gripper comport', default='/dev/ttyUSB0')
+  parser.add_argument('--comport', type=str, help='gripper comport', default='/dev/ttyUSB1')
 
   args = parser.parse_args()    
   main(args)
