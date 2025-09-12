@@ -103,6 +103,8 @@ def main(args):
   print("Wait for digit frame toggle service")
   rospy.wait_for_service('capture_digit_frame')
   capture_digit = rospy.ServiceProxy('capture_digit_frame', SetBool)
+  rospy.wait_for_service('toggle_digit_frame')
+  toggle_digit = rospy.ServiceProxy('toggle_digit_frame', SetBool)
   rospy.wait_for_service('get_last_image')
   get_last_image = rospy.ServiceProxy('get_last_image', GetImage)
   rospy.sleep(1)
@@ -167,12 +169,9 @@ def main(args):
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
         rospy.sleep(0.3)
-        record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
-                    grasp_force=config.GRASP_FORCE, is_grasping=True)
         # rotate
-        rtde_help.goToPose(poseC)
+        rtde_help.goToPose(poseB)
         rospy.sleep(0.2)
-        save_frames(capture_digit)
         # open
         goal = CommandRobotiqGripperGoal()
         goal.position = 0.07
@@ -181,13 +180,10 @@ def main(args):
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
         rospy.sleep(0.2)
-        record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
-                    grasp_force=-1, is_grasping=False)
-        
-        rospy.sleep(0.1)
 
       # SCREW ------------------------------------------------------
-      rtde_help.goToPose(poseB)
+      # go to pose C before grasping
+      rtde_help.goToPose(poseC, speed=.5, acc=.5)
       FT_help.setNowAsBias()
       rospy.sleep(0.1)    
 
@@ -259,7 +255,8 @@ def main(args):
         goal.force = 0
         robotiq_client.send_goal(goal)
         robotiq_client.wait_for_result()
-        rospy.sleep(0.2)
+
+        rospy.sleep(0.4)
         record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, 
                     grasp_force=-1, is_grasping=False)
 
@@ -279,6 +276,7 @@ def main(args):
 
     # stop data logging
     rtde_help.goToPose(poseA)
+    syncPub.publish(SYNC_STOP)
     dataLoggerEnable(False)
     rospy.sleep(5)
 
