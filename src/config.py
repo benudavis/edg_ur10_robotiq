@@ -11,6 +11,7 @@ TIGHTENING_TORQUE = .8
 
 POSITION_A = np.array([0.5997, -0.123, 0.25])
 POSITION_B = np.array([0.5997, -0.123, 0.25])
+POSITION_D = np.array([0.5997, -0.123, 0.5])
 
 # ranges for data collection.
 # handled as offsets from the standard pose and force
