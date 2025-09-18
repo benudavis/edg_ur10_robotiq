@@ -92,10 +92,6 @@ def main(args):
   # Set the synchronization Publisher
   syncPub = rospy.Publisher('sync', Int8, queue_size=1)
 
-  # grasp force publisher
-  graspForcePub = rospy.Publisher('grasp_force', Float32, queue_size=1)
-  isGraspingPub = rospy.Publisher('is_grasping', Bool, queue_size=1)
-
   print("Wait for the data_logger to be enabled")
   rospy.wait_for_service('data_logging')
   dataLoggerEnable = rospy.ServiceProxy('data_logging', Enable)
@@ -113,25 +109,32 @@ def main(args):
 
 
   # Set the pose A
-  
-  positionA = config.POSITION_D
-  positionB = config.POSITION_E
-  orientationA = tf.transformations.quaternion_from_euler(np.pi,0,-np.pi/2,'sxyz') # -np.pi/4
+  positionA = config.POSITION_G
+  orientationA = tf.transformations.quaternion_from_euler(np.pi,0,-np.pi/2,'sxyz') #static (s) rotating (r)
   poseA = rtde_help.getPoseObj(positionA, orientationA)
-  orientationB = tf.transformations.quaternion_from_euler(np.pi,0,-np.pi/2,'sxyz') #static (s) rotating (r)
+
+  # Set the pose B
+  positionB = config.POSITION_G
+  orientationB = tf.transformations.quaternion_from_euler(np.pi,0, 0,'sxyz') #static (s) rotating (r)
   poseB = rtde_help.getPoseObj(positionB, orientationB)
+
+  # pose C
+  positionC = config.POSITION_F
+  orientationC = tf.transformations.quaternion_from_euler(np.pi,0, -np.pi/2,'sxyz') #static (s) rotating (r)
+  poseC = rtde_help.getPoseObj(positionC, orientationC)
+
   # try block so that we can have a keyboard exception
   try:
 
     input("Press <Enter> to go start pose")
     # open
     goal = CommandRobotiqGripperGoal()
-    goal.position = 0.15
+    goal.position = 0.07
     goal.speed = 0
     goal.force = 0
     robotiq_client.send_goal(goal)
     robotiq_client.wait_for_result()
-    rtde_help.goToPose(poseA)
+    rtde_help.goToPose(poseC)
 
     input("Press <Enter> to go start expeirment")
     # set biases now
@@ -144,45 +147,48 @@ def main(args):
     # start data logging
     dataLoggerEnable(True)
     syncPub.publish(SYNC_START)
-    rospy.sleep(0.2)
     toggle_digit(True)
-    rospy.sleep(0.3)
-    # record_data(capture_digit, graspForcePub, isGraspingPub, ppc=config.POINTS_PER_CAPTURE, grasp_force=-1, is_grasping=False)
+    rospy.sleep(0.2)
+    
+
+    # UNSCREW ------------------------------------------------------
+    # go to pose C before grasping
+    rtde_help.goToPose(poseC, speed=.2, acc=.3)
+    FT_help.setNowAsBias()
+    input("press enter to move to bottle")
+    rtde_help.goToPose(poseA)
+    rospy.sleep(0.2)
 
     # close gripper
     goal = CommandRobotiqGripperGoal()
     goal.position = 0.005
-    goal.speed = 50
-    goal.force = 220
+    goal.speed = 10
+    goal.force = 100
     robotiq_client.send_goal(goal)
     robotiq_client.wait_for_result()
+    rospy.sleep(0.1)
 
-    # sleep and then move up
-    rospy.sleep(0.2)
-    rtde_help.goToPose(poseB, speed=0.01, acc=0.05)
-    rospy.sleep(1)
-
-    # go back down
-    rtde_help.goToPose(poseA, speed=0.01, acc=0.05)
-    rospy.sleep(0.5)
+    # unscrew
+    rtde_help.goToPose(poseB)
+    rospy.sleep(0.1)
 
     # open
     goal = CommandRobotiqGripperGoal()
-    goal.position = 0.15
+    goal.position = 0.07
     goal.speed = 100
     goal.force = 0
     robotiq_client.send_goal(goal)
     robotiq_client.wait_for_result()
     rospy.sleep(0.2)
 
-    
+    rtde_help.goToPose(poseA, speed=0.5, acc=0.5)
+    rtde_help.goToPose(poseC)
 
     # stop data logging
     toggle_digit(False)
-    rtde_help.goToPose(poseA)
     syncPub.publish(SYNC_STOP)
     dataLoggerEnable(False)
-    rospy.sleep(1)
+    rospy.sleep(5)
 
     # save data and clear the temporary folder
     # file_help.saveDataParams(args, appendTxt='Simple_experiment_'+'depth_'+str(args.depth)+'_cycle_'+str(args.cycle))
