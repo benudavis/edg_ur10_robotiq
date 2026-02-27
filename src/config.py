@@ -9,12 +9,12 @@ GRASP_FORCE = 80
 TWIST_SPEED = 0.25
 TIGHTENING_TORQUE = .8
 
-POSITION_A = np.array([0.5997, -0.123, 0.25])
-POSITION_B = np.array([0.5997, -0.123, 0.25])
-POSITION_D = np.array([0.5997, -0.123, 0.1]) # down position for grab stuff
-POSITION_E = np.array([0.5997, -0.123, 0.2]) # up position for grab stuff
+POSITION_A = np.array([0.5953, -0.1186, 0.25])
+POSITION_B = np.array([0.5953, -0.1186, 0.25])
+POSITION_D = np.array([0.5953, -0.1186, 0.1]) # down position for grab stuff
+POSITION_E = np.array([0.5953, -0.1186, 0.2]) # up position for grab stuff
 POSITION_F = np.array([0.5931, -0.07, 0.35]) # off position for unscrew demo
-POSITION_G = np.array([0.5931, -0.1213, 0.25]) # on position for unscrew demo
+POSITION_G = np.array([0.5953, -0.1186, 0.25]) # on position for unscrew demo
 
 # ranges for data collection.
 # handled as offsets from the standard pose and force

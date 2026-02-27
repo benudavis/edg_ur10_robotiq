@@ -308,7 +308,7 @@ if __name__ == '__main__':
   parser.add_argument('--depth', type=int, help='argument for test type', default= 0)
   parser.add_argument('--author', type=str, help='argument for str type', default= "EDG")
   parser.add_argument('--cycle', type=int, help='the number of cycle to apply', default = 1)
-  parser.add_argument('--comport', type=str, help='gripper comport', default='/dev/ttyUSB0')
+  parser.add_argument('--comport', type=str, help='gripper comport', default='/dev/ttyUSB1')
 
   args = parser.parse_args()    
   main(args)
