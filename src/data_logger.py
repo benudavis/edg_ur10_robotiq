@@ -15,7 +15,6 @@ import numbers
 import collections
 from operator import attrgetter
 from datetime import datetime
-from edg_ur10_robotiq.srv import GetImage, GetImageResponse
 from std_srvs.srv import SetBool, SetBoolResponse
 import config
 
@@ -59,17 +58,29 @@ from cv_bridge import CvBridge
 bridge = CvBridge()
 file_helper = fileSaveHelp()
 
-# Buffer to store image and timestamp
-digit_image_buffer = []  # each entry: (rospy.Time, np.ndarray)
-digit_image_topic = "/digitFrame"  # update if your topic name is different
+use_digit_mode = True
 
-save_digit_frames = False # Set to True to save frames
+# Image topics for different hardware setups
+DIGIT_IMAGE_TOPIC = "/digitFrame"
+TACTILE1_IMAGE_TOPIC = "/tactile1"
+TACTILE2_IMAGE_TOPIC = "/tactile2"
+
+# Buffers to store image streams: each entry is (timestamp_sec, image_array)
+digit_image_buffer = []
+tactile1_image_buffer = []
+tactile2_image_buffer = []
+
+# Per-topic frame logging toggle
+save_image_frames = {
+    DIGIT_IMAGE_TOPIC: False,
+    TACTILE1_IMAGE_TOPIC: False,
+    TACTILE2_IMAGE_TOPIC: False,
+}
 
 last_digit_image = None
 
 def digit_image_callback(msg):
-    global save_digit_frames
-    if not save_digit_frames:
+    if not save_image_frames[DIGIT_IMAGE_TOPIC]:
         return
     
     try:
@@ -81,11 +92,40 @@ def digit_image_callback(msg):
     # Numeric topic logging (as-is)
 
 def toggle_digit_frame_service(req):
-    print('debug')
-    global save_digit_frames
-    save_digit_frames = req.data
+    save_image_frames[DIGIT_IMAGE_TOPIC] = req.data
     rospy.loginfo("[✓] Request received to log Digit frames.")
     return SetBoolResponse(success=True, message="Digit frame logging has been toggled.")
+
+
+def tactile1_image_callback(msg):
+    if not save_image_frames[TACTILE1_IMAGE_TOPIC]:
+        return
+
+    try:
+        ros_time = msg.header.stamp
+        img = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+        tactile1_image_buffer.append((ros_time.to_sec(), img))
+    except Exception as e:
+        rospy.logerr(f"[X] Failed to convert image in tactile1_image_callback: {e}")
+
+
+def tactile2_image_callback(msg):
+    if not save_image_frames[TACTILE2_IMAGE_TOPIC]:
+        return
+
+    try:
+        ros_time = msg.header.stamp
+        img = bridge.imgmsg_to_cv2(msg, desired_encoding='passthrough')
+        tactile2_image_buffer.append((ros_time.to_sec(), img))
+    except Exception as e:
+        rospy.logerr(f"[X] Failed to convert image in tactile2_image_callback: {e}")
+
+
+def toggle_tactile_frame_service(req):
+    save_image_frames[TACTILE1_IMAGE_TOPIC] = req.data
+    save_image_frames[TACTILE2_IMAGE_TOPIC] = req.data
+    rospy.loginfo("[✓] Request received to log tactile fingertip frames.")
+    return SetBoolResponse(success=True, message="Tactile frame logging has been toggled.")
 
 def capture_digit_image_service(req):
     global last_digit_image
@@ -116,21 +156,6 @@ def capture_digit_image_service(req):
         return SetBoolResponse(success=False, message="Timed out waiting forimage from DIGIT sensor.")
     except Exception as e:
         return SetBoolResponse(success=False, message=f"Unexpected error: {e}")
-    
-def get_last_digit_image_service(req):
-    global last_captured_image
-    if last_digit_image is not None:
-        try:
-            img_msg = bridge.cv2_to_imgmsg(last_digit_image, "rgb8")
-            rospy.loginfo("[✓] Last captured image provided via service.")
-            return GetImageResponse(captured_image=img_msg)
-        except Exception as e:
-            rospy.logerr(f"[X] Failed to convert image for service response: {e}")
-            return GetImageResponse() # Return an empty response on failure
-    else:
-        rospy.logwarn("last captured image unavailable")
-        return GetImageResponse()
-
 
 
 def appendDataPoint(topic, msg):
@@ -333,7 +358,13 @@ def loadConfigFile(filePath):
 
             # Subscribe
             if msg_name == "sensor_msgs/Image":
-                sub = rospy.Subscriber(topic_str, Image, digit_image_callback)
+                image_callbacks = {
+                    DIGIT_IMAGE_TOPIC: digit_image_callback,
+                    TACTILE1_IMAGE_TOPIC: tactile1_image_callback,
+                    TACTILE2_IMAGE_TOPIC: tactile2_image_callback,
+                }
+                image_callback = image_callbacks.get(topic_str, digit_image_callback)
+                sub = rospy.Subscriber(topic_str, Image, image_callback)
                 rospy.loginfo(f"Subscribed to image topic '{topic_str}' with Image callback")
             else:
                 sub = rospy.Subscriber(topic_str, AnyMsg, callback, (topic_str, msg_name))
@@ -364,7 +395,10 @@ def setLoggingState(request):
             # The config file must list topics we want to log
             path = os.path.dirname(__file__)
             parent = os.path.dirname(path)
-            config_path = os.path.join(parent, "config", "TopicsList.txt")
+            config_name = "TopicsList_digit.txt" if use_digit_mode else "TopicsList_tactile.txt"
+            config_path = os.path.join(parent, "config", config_name)
+            if not os.path.exists(config_path):
+                config_path = os.path.join(parent, "config", "TopicsList.txt")
 
             loadConfigFile(config_path)
             rospy.loginfo("Listening for these topics: %s", str(listOfTopics))
@@ -411,15 +445,29 @@ def setLoggingState(request):
 
         isLoggingEnabled = False
 
-        # Prepare dict for .mat saving
-        digit_image_dict = {
-            'timestamps': [t for t, _ in digit_image_buffer],
-            'images': [img for _, img in digit_image_buffer]
-        }
+        # Save frames for active setup only to preserve previous behavior.
+        if use_digit_mode:
+            digit_image_dict = {
+                'timestamps': [t for t, _ in digit_image_buffer],
+                'images': [img for _, img in digit_image_buffer]
+            }
+            file_helper.saveDataParams(appendTxt='digit_data_log', image_frames=digit_image_dict)
+            digit_image_buffer.clear()
+        else:
+            tactile_image_dict = {
+                TACTILE1_IMAGE_TOPIC: {
+                    'timestamps': [t for t, _ in tactile1_image_buffer],
+                    'images': [img for _, img in tactile1_image_buffer],
+                },
+                TACTILE2_IMAGE_TOPIC: {
+                    'timestamps': [t for t, _ in tactile2_image_buffer],
+                    'images': [img for _, img in tactile2_image_buffer],
+                },
+            }
 
-        # Save
-        file_helper.saveDataParams(appendTxt='digit_data_log', image_frames=digit_image_dict)
-        digit_image_buffer.clear()
+            file_helper.saveDataParams(appendTxt='tactile_data_log', image_frames=tactile_image_dict)
+            tactile1_image_buffer.clear()
+            tactile2_image_buffer.clear()
 
         return EnableResponse(all_output_file_names)
 
@@ -429,6 +477,8 @@ if __name__ == '__main__':
     print("DataLogger Started")
 
     rospy.init_node("edg_log_node", anonymous=True)
+    use_digit_mode = rospy.get_param("~use_digit", True)
+    rospy.loginfo("data_logger use_digit mode: %s", use_digit_mode)
 
     # Retrieve the graph of nodes
     master = rosgraph.Master(rospy.get_name())
@@ -437,8 +487,11 @@ if __name__ == '__main__':
 
     # Advertise the data_logging service
     service = rospy.Service('data_logging', Enable, setLoggingState)
-    digit_service = rospy.Service('capture_digit_frame', SetBool, capture_digit_image_service)
-    digit_toggle_service = rospy.Service('toggle_digit_frame', SetBool, toggle_digit_frame_service)
-    last_image_service = rospy.Service('get_last_image', GetImage, get_last_digit_image_service)
+
+    if use_digit_mode:
+        digit_service = rospy.Service('capture_digit_frame', SetBool, capture_digit_image_service)
+        digit_toggle_service = rospy.Service('toggle_digit_frame', SetBool, toggle_digit_frame_service)
+    else:
+        tactile_toggle_service = rospy.Service('toggle_tactile_frames', SetBool, toggle_tactile_frame_service)
 
     rospy.spin()

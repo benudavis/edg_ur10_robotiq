@@ -1,5 +1,9 @@
 import numpy as np
 
+#######################################################
+# MOST VALUES ARE FOR RESILIENT TACTILE SENSING PAPER #
+#######################################################
+
 # parameters
 DIGIT_AVG_FRAMES = 3
 POINTS_PER_CAPTURE = 1

@@ -88,29 +88,43 @@ class fileSaveHelp(object):
         if image_frames is not None and isinstance(image_frames, dict):
             try:
                 if (self.saveFrames):
-                    image_array = np.stack(image_frames['images'], axis=0)
-                    timestamps = np.array(image_frames['timestamps'])
+                    if 'images' in image_frames and 'timestamps' in image_frames:
+                        stream_name = 'digit'
+                        streams = {stream_name: image_frames}
+                    else:
+                        streams = image_frames
 
-                    savingDictionary["digit_image_frames"] = image_array
-                    savingDictionary["digit_image_timestamps"] = timestamps
-                    print("[✓] Saved image frames and timestamps to .mat")
+                    for stream_name, stream_frames in streams.items():
+                        if not isinstance(stream_frames, dict):
+                            continue
+                        if 'images' not in stream_frames or 'timestamps' not in stream_frames:
+                            continue
+                        if len(stream_frames['images']) == 0:
+                            continue
 
-                    # Also save as video
-                    video_filename = savingFileName.replace('.mat', '.avi')
-                    height, width = image_array.shape[1], image_array.shape[2]
-                    if image_array.ndim == 4:
-                        _, height, width, _ = image_array.shape
+                        image_array = np.stack(stream_frames['images'], axis=0)
+                        timestamps = np.array(stream_frames['timestamps'])
+                        safe_stream_name = str(stream_name).strip('/').replace('/', '_')
 
-                    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-                    out = cv2.VideoWriter(video_filename, fourcc, 30.0, (width, height))
-                    for frame in image_array:
-                        if frame.ndim == 2:
-                            frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
-                        else:
-                            frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
-                        out.write(frame)
-                    out.release()
-                    print(f"[✓] Saved DIGIT video: {video_filename}")
+                        savingDictionary[f"{safe_stream_name}_image_frames"] = image_array
+                        savingDictionary[f"{safe_stream_name}_image_timestamps"] = timestamps
+                        print(f"[✓] Saved image frames and timestamps for {safe_stream_name} to .mat")
+
+                        video_filename = savingFileName.replace('.mat', f'_{safe_stream_name}.avi')
+                        height, width = image_array.shape[1], image_array.shape[2]
+                        if image_array.ndim == 4:
+                            _, height, width, _ = image_array.shape
+
+                        fourcc = cv2.VideoWriter_fourcc(*'XVID')
+                        out = cv2.VideoWriter(video_filename, fourcc, 30.0, (width, height))
+                        for frame in image_array:
+                            if frame.ndim == 2:
+                                frame = cv2.cvtColor(frame, cv2.COLOR_GRAY2BGR)
+                            else:
+                                frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+                            out.write(frame)
+                        out.release()
+                        print(f"[✓] Saved video: {video_filename}")
                 else:
                     # calculate delta intensity wrt first frame
                     first_frame = image_frames['images'][0]

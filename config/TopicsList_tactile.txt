@@ -1,0 +1,6 @@
+/endEffectorPose
+/netft_data
+/tactile1
+/tactile2
+/grasp_force
+/is_grasping
